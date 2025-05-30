@@ -1,7 +1,8 @@
-name: eBUSd
+name: eBUSdAlt
 version: "25.1.0"
-slug: ebusd
+slug: ebusd_alt
 description: >
+  Same as original, but to have a second instance on my system
   This Add-on runs eBUSd, a daemon for handling communication with eBUS devices
   connected to a 2-wire bus system (“energy bus” used by numerous heating systems)
   USB and network eBUSd adapters are supported.
