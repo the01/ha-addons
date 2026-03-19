@@ -62,6 +62,29 @@ Common flags to add:
 
 Full flag reference: [ebusd wiki: Run](https://github.com/john30/ebusd/wiki/2.-Run)
 
+### Running multiple ebusd app instances
+
+If you run two (or more) ebusd app instances against the same MQTT broker,
+you must set unique MQTT identifiers per instance. Otherwise, the broker will
+disconnect the older session when a second client connects with the same
+`client_id`.
+
+Set these options explicitly in each instance's `commandline_options`:
+
+- `--mqttclientid=<unique-id-per-instance>`
+- `--mqtttopic=<unique-topic-prefix-per-instance>`
+
+Example:
+
+- Instance A
+  - `--mqttclientid=ebusd_main`
+  - `--mqtttopic=ebusd_main`
+- Instance B
+  - `--mqttclientid=ebusd_alt`
+  - `--mqtttopic=ebusd_alt`
+
+Keep `--mqttjson` enabled on all instances for Home Assistant MQTT discovery.
+
 ### 5. Start the app
 
 Start the app and watch the log. A successful startup looks like:
