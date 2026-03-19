@@ -1,69 +1,35 @@
 name: eBUSdAlt
-version: "25.1.0"
+version: "26.1.6"
 slug: ebusd_alt
 description: >
   Same as original, but to have a second instance on my system
-  This Add-on runs eBUSd, a daemon for handling communication with eBUS devices
-  connected to a 2-wire bus system (“energy bus” used by numerous heating systems)
-  USB and network eBUSd adapters are supported.
-url: https://community.home-assistant.io/t/an-ebusd-add-on/344852
+  Run ebusd — a daemon for communicating with eBUS devices (heating systems connected
+  to a 2-wire energy bus). A transparent wrapper of john30/ebusd; tracks upstream
+  releases automatically. USB and network eBUS adapters supported.
+url: https://github.com/john30/ebusd
 arch:
-  - armhf
-  - armv7
   - aarch64
   - amd64
-  - i386
 image: "ghcr.io/lukasgrebe/ha-addon-ebusd-{arch}"
 init: false
 startup: services
+#ingress: true
+#ingress_port: 7681
 services:
-  - mqtt:need
+  - mqtt:want
 uart: true
 map:
-  - config:rw
+  - addon_config:rw
 ports:
   8888/tcp: null
   8889/tcp: null
 ports_description:
-  8888/tcp: TCP client port
-  8889/tcp: HTTP client port (HTTP must be activated in config)
+  8888/tcp: eBUSd TCP command port
+  8889/tcp: eBUSd HTTP port (set --httpport=8889 in commandline_options to enable)
 options:
-  scanconfig: true
-  loglevel_all: "notice"
-  mqtttopic: "ebusd"
-  mqttint: "/etc/ebusd/mqtt-hassio.cfg"
-  mqttjson: true
+  commandline_options:
+    - "--mqttjson"
 schema:
-  mode: "list(enh|ens|udp)?"
   device: "device(subsystem=tty)?"
   network_device: "str?"
-  latency: "int(0,10000)?"
-  pollinterval: "int(0,3600)?"
-  http: "bool?"
-  readonly: "bool?"
-  scanconfig: "bool?"
-  configpath: "str?"
-  commandline_options: "str?"
-  accesslevel: "str?"
-  logdir_name: "str?"
-  logdir_files_number: "int?"
-  logdir_files_size: "int?"
-  loglevel_all: "list(error|notice|info|debug)?"
-  loglevel_network: "list(error|notice|info|debug)?"
-  loglevel_bus: "list(error|notice|info|debug)?"
-  loglevel_update: "list(error|notice|info|debug)?"
-  loglevel_main: "list(error|notice|info|debug)?"
-  loglevel_other: "list(error|notice|info|debug)?"
-  mqtthost: "str?"
-  mqttport: "int?"
-  mqttuser: "str?"
-  mqttpass: "str?"
-  mqttjson: "bool?"
-  mqttlog: "bool?"
-  mqttretain: "bool?"
-  mqttint: "str?"
-  mqttvar: "str?"
-  mqtttopic: "str?"
-  lograwdata: "bool?"
-  lograwdatafile: "str?"
-  lograwdatasize: "int?"
+  commandline_options: ["str"]

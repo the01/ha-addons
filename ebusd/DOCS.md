@@ -1,76 +1,200 @@
-# Home Assistant Add-on: eBUSd
+# Home Assistant App: eBUSd
 
-This is to run [ebusd](http://ebusd.eu) as supervisor addon (docker container) in Home Assistant OS.
+> **This app is a transparent wrapper.** It packages the unmodified
+> [ebusd](https://ebusd.eu) binary from [john30/ebusd](https://github.com/john30/ebusd)
+> into a Home Assistant supervised container. Nothing more.
 
-## How to run ebusd
+**If something isn't working, the answer is almost always in the ebusd docs, not here.**
+Issues with device communication, CSV message definitions, MQTT entity values, bus
+errors, or heating-system behaviour belong with the ebusd project:
 
-Deep dive into the [ebusd Wiki](https://github.com/john30/ebusd/wiki).
-The steps **Build and Install are handled by this addon**. You'll need to **configure the options in this addon to run** ebusd.
+- [ebusd wiki](https://github.com/john30/ebusd/wiki) — primary reference
+- [ebusd wiki: Run](https://github.com/john30/ebusd/wiki/2.-Run) — all command-line flags
+- [ebusd-configuration](https://github.com/john30/ebusd-configuration) — message CSV files
+- [ebusd discussions](https://github.com/john30/ebusd/discussions) — community support
 
-1. Connect a [hardware interface](https://github.com/john30/ebusd/wiki/6.-Hardware) to your device runing Home Assistant OS. USB and network devices are supported.
-2. Define either a USB or network device.  Seperate configuration entries are available via the UI or can be configured manually using ```device: /dev/ttyAMA0``` or ```network_device: enh:192.158.0.7:9999```
-3. MQTT will be configured automatically to use the Home Assitant MQTT Broker.  This can be overridden in the config options if you would prefer to use an external MQTT server.  TCP and HTTP client acces is also available.
-4. Start the Add-on and check the output logs
-  <img width="512" alt="Bildschirmfoto 2021-10-07 um 21 54 10" src="https://user-images.githubusercontent.com/1786188/136459050-16ab7c10-0fe0-40ff-b20d-b6eb1730630d.png">
+Open an issue in [this repository](https://github.com/LukasGrebe/ha-addons/issues) only
+for problems specific to running ebusd inside Home Assistant Supervisor (startup failures,
+HA integration, config folder access).
+
+---
+
+## Setup
+
+### 1. Connect your hardware
+
+Connect a compatible [eBUS hardware interface](https://github.com/john30/ebusd/wiki/6.-Hardware)
+to your Home Assistant device — either USB or network-attached.
+
+### 2. Install and configure Mosquitto
+
+This app communicates with HA via MQTT. Install the **Mosquitto broker** app from the
+HA App Store and start it. The ebusd app will auto-detect it.
+
+### 3. Configure the adapter
+
+In the app configuration, set one of:
+
+- **USB eBUS adapter** — select the TTY device from the picker (e.g. `/dev/serial/by-id/...`)
+- **Network / enhanced-protocol adapter** — enter the full device string including
+  protocol prefix, e.g. `ens:192.168.1.100:9999` or `enh:192.168.1.100:9999`
+
+Leave both blank to let ebusd attempt mDNS auto-discovery.
+
+### 4. Configure ebusd options
+
+Use the **Additional ebusd options** list to pass flags to ebusd. Add one flag per entry.
+
+The default list already contains `--mqttjson` — this is required for HA MQTT discovery.
+**Do not remove it.**
+
+Common flags to add:
+
+| Flag | Purpose |
+|---|---|
+| `--scanconfig` | Scan the bus for known devices on startup |
+| `--pollinterval=30` | Poll interval in seconds |
+| `--httpport=8889` | Enable HTTP port for the ebusd web interface |
+| `--log=bus:debug` | Enable debug logging for the bus |
+| `--configlang=de` | Prefer German message definitions |
+| `--configpath=/config/ebusd/` | Use local message definition files |
+| `--mqtttopic=ebusd` | Override the MQTT topic prefix |
+
+Full flag reference: [ebusd wiki: Run](https://github.com/john30/ebusd/wiki/2.-Run)
+
+### 5. Start the app
+
+Start the app and watch the log. A successful startup looks like:
+
+```
+[INFO] eBUSd addon version 26.1.x
+[INFO] ebusd --foreground --updatecheck=off --mqtthost=... --mqttjson ...
+```
+
+Entities appear in HA under a device named *ebusd* after the first successful bus scan.
+
+---
+
+## Migrating ebusd options from version 25.1 or older
+
+The configuration schema changed significantly in version 26.1. Individual config fields
+(`scanconfig`, `loglevel_all`, `mqtttopic`, `mode`, `readonly`, etc.) have been removed.
+
+**At startup the app will warn you if it detects your old config fields** — look for lines
+starting with `DEPRECATED CONFIG FIELDS DETECTED` in the log.
+
+To migrate, translate your old fields into `commandline_options` list entries:
+
+| Old field | New entry in commandline_options |
+|---|---|
+| `scanconfig: true` | `--scanconfig` |
+| `loglevel_all: notice` | `--log=all:notice` |
+| `loglevel_bus: debug` | `--log=bus:debug` |
+| `mqtttopic: ebusd` | `--mqtttopic=ebusd` |
+| `mqttint: /etc/ebusd/mqtt-hassio.cfg` | `--mqttint=/config/mqtt-hassio.cfg` |
+| `readonly: true` | `--readonly` |
+| `pollinterval: 30` | `--pollinterval=30` |
+| `http: true` | `--httpport=8889` |
+| `configpath: /some/path` | `--configpath=/some/path` |
+| `mode: ens` + `network_device: 192.168.1.1:9999` | set **network\_device** to `ens:192.168.1.1:9999` |
+| `mqttvar: filter-direction=r` | `--mqttvar=filter-direction=r` |
+
+MQTT credentials (`mqtthost`, `mqttport`, `mqttuser`, `mqttpass`) are now always
+auto-configured from the Mosquitto broker — remove them from your config entirely.
+
+---
+
+## App config folder
+
+The app config folder is at `/addon_configs/2ad9b828_ebusd/` on the HA host and mounted at
+`/config` inside the running container. It is included in HA backups.
+
+Access it via:
+
+- **Studio Code Server** (VS Code in browser addon) — full filesystem access, browse to `/addon_configs/2ad9b828_ebusd/`
+- **SSH** (Advanced SSH addon) — `cd /addon_configs/2ad9b828_ebusd/`
+- **Samba** — exposed as the `addon_configs` share
+
+> Note: the built-in **File Editor** cannot access app config folders — use one of the above instead.
+
+| Host path | Container path | Purpose |
+|---|---|---|
+| `/addon_configs/2ad9b828_ebusd/mqtt-hassio.cfg` | `/config/mqtt-hassio.cfg` | MQTT integration config (seeded on first start) |
+| `/addon_configs/2ad9b828_ebusd/` | `/config/` | Local message definition CSV files |
+
+## Migrating config folder from version 25.1 or older
+
+The config folder moved from `/config/` (shared with HA) to a dedicated app config
+folder. Any files you had in `/config/` (e.g. custom `mqtt-hassio.cfg` or local CSV
+files) need to be copied to the new location.
+
+| Old path (≤25.1) | New path (≥26.1) |
+|---|---|
+| `/config/mqtt-hassio.cfg` | `/addon_configs/2ad9b828_ebusd/mqtt-hassio.cfg` |
+| `/config/ebusd-configuration/` | `/addon_configs/2ad9b828_ebusd/` |
+
+Copy your files via SSH or Studio Code Server. The `mqtt-hassio.cfg` is seeded
+automatically on first start if it doesn't exist yet — you only need to copy it if you
+have a customised version.
+
+After migrating, restart the app and confirm the warning is gone from the logs.
 
 
-## How to get data into Home Assistant
+---
 
-MQTT discovery is now automatically configured.  When you start the add-on the global readings (uptime, signal status etc.) will be added to Home Assistant automatically under a device named ebusd.  After around 5 minutes any readings that are being polled, either via an MQTT request or by editing your config files, will be added to Home Assistant automatically.  The device name will be ebusd {circuit} - e.g. "ebusd bai".
+## Using ebusctl (interactive shell)
 
-The mqttvar option can be used to inject MQTT variables or the [mqtt-hassio.cfg](https://github.com/john30/ebusd/blob/master/contrib/etc/ebusd/mqtt-hassio.cfg) can be edited and saved in your /config folder.
+`ebusctl` is the command-line client for querying the bus directly.
 
-For more info please see the eBUSd docs:
- - [MQTT Integration](https://github.com/john30/ebusd/wiki/MQTT-integration)
- - [MQTT Discovery](https://github.com/john30/ebusd/discussions/518)
+### Via the built-in terminal (easiest)
 
-**Top tips:** 
+Click **Open Web UI** on the addon's Info page. This opens a full shell inside the
+running container — no extra addons needed.
 
-- If you send an MQTT get message with payload "?1" eBUSd will automatically poll that reading every 30 seconds and publish via MQTT. For example: ```mosquitto_pub -t ebusd/bai/FlowTemp/get -m ?1```
-- Git clone the ebusd-configuration files to your /config folder and edit the config files for your heating system.  Add a number 1-9 (1 high priority, 9 low prioirty) after the r at the start of each line and eBUSd will poll that reading automatically.
-- Once your heating system has been detected change the device name from "ebusd bai" to the name of your boiler e.g. "ecoTEC pro"
-- If some polled readings do not show up in Home Assistant it might be because mqtt-hassio.cfg is configured to filter them out.  Try setting to mqttvar to ```"filter-name="``` and this will remove any filters so you can debug the issue.
+```bash
+ebusctl info
+ebusctl scan result
+ebusctl read -f OutsideTemp
+ebusctl find -d -r
+```
 
-## Custom CSV or MQTT cfg files:
+### Via SSH (alternative)
 
-To use custom config files you can use the configpath option. You can create a local copy of https://github.com/john30/ebusd-configuration in your "/config" folder and change configpath to e.g. "/config/ebusd-configuration/latest/en".  Custom CSV files must be in the /config folder.
+Requires the [Advanced SSH & Web Terminal](https://github.com/hassio-addons/addon-ssh)
+addon with **Protection mode** disabled on the ebusd addon's Info page.
 
-Similarly for MQTT create config file in "/config" folder and link it using the --mqttint=/config/YOUR_FILE_PATH option
+```bash
+docker exec -it $(docker ps --filter name=ebusd --format '{{.ID}}') /bin/bash
+```
 
-## HTTP and TCP client Access
+### Via raw TCP
 
-To use HTTP and TCP clients enter port numbers into the add-on network settings and activated in the config.
-After TCP clients activation you can connect from any system with installed [ebusd clients](https://github.com/john30/ebusd/wiki/3.-Clients-and-commands).
+Port 8888 accepts raw TCP — useful for quick queries or scripting. You must first expose
+the port under **Network** on the addon's Configuration page (set host port for 8888/tcp).
 
-The following example will force a reading of all messages from loaded csv config files and can be included via crontab for regular message updates:
+```
+telnet <HA-IP> 8888
+```
 
-```ebusctl -s X.X.X.X f -l "*" -a|awk '{print $2}' | xargs -L1 -t ebusctl -s X.X.X.X r```
-Where ```X.X.X.X``` is the address of the ebusd add-on.
+See [ebusd wiki: TCP client commands](https://github.com/john30/ebusd/wiki/3.1.-TCP-client-commands).
 
-## Running ebusd and ebusctl directly
+---
 
-To run ebusctl and/or ebusd directly (as suggested on other forums for debugging purposses) you need to SSH into the Docker container. For this you need the [**Advanced** SSH & Web Terminal](https://github.com/hassio-addons/addon-ssh) (not the standard one). 
+## Custom message definitions
 
-After getting the addon, you need to set a password in the configuration of the SSH addon otherwise it will not start.
+ebusd fetches message definitions automatically from [ebus.github.io](https://ebus.github.io)
+when `--scanconfig` is set. **You don't need to configure anything for this to work.**
 
-Last step in preparing the addon is to disable the 'Protection mode' on the *Info* page of the addon.
+To use local definition files instead, clone the
+[ebus.github.io](https://github.com/eBUS/ebus.github.io) repo into the app config folder
+and add to `commandline_options`:
 
-Afterwards, in the SSH you can type in
+```
+--configpath=/config/ebusd-configuration/en
+```
 
-```docker exec -it `docker ps | grep ebusd | awk '{print $1}'` /bin/bash```
-
-and you are inside the docker container, where you can easily run `ebusctl` or `ebusd`.
-
-## Custom command line options
-
-You can add any command line options using the custom command line options field.  Check the eBUSd wiki for all available options - https://github.com/john30/ebusd/wiki/2.-Run
-
-For example ``` --initsend --dumpconfig```
-
-## Network eBUS adapter support
-
-This release now fully supports wireless/network [eBUS adapters](https://adapter.ebusd.eu/index.en.html). The configuration options has changed from custom_device to network_device.
-
-For example ```network_device: enh:Y.Y.Y.Y:9999```
-Where ```Y.Y.Y.Y``` is the address of the eBUS asapter.
-
+For authoring custom definitions, see the
+[ebusd-configuration](https://github.com/john30/ebusd-configuration) repo and the
+[ebus-notebook](https://github.com/john30/ebus-notebook) VS Code extension.
+The toolchain uses TypeSpec (`.tsp` files) compiled to CSV — this requires a local
+Node.js install and is not possible inside the HA VS Code addon.

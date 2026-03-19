@@ -1,114 +1,86 @@
 #!/usr/bin/with-contenv bashio
 
+bashio::log.info "eBUSd addon version $(bashio::addon.version)"
+
 declare -a ebusd_args
 
-#Always run in the foreground
-ebusd_args+=("--foreground")
+ebusd_args+=(
+    "--foreground"
+    "--updatecheck=off"
+)
 
-#MQTT
-if bashio::config.has_value "mqtthost"; then
-    ebusd_args+=("--mqtthost=$(bashio::config mqtthost)")
+if bashio::services.available 'mqtt'; then
+    ebusd_args+=(
+        "--mqtthost=$(bashio::services mqtt 'host')"
+        "--mqttport=$(bashio::services mqtt 'port')"
+        "--mqttuser=$(bashio::services mqtt 'username')"
+        "--mqttpass=$(bashio::services mqtt 'password')"
+        "--mqttjson"
+        "--mqttint=/config/mqtt-hassio.cfg"
+    )
 else
-    ebusd_args+=("--mqtthost=$(bashio::services mqtt 'host')")
+    bashio::log.warning "MQTT service not available via Supervisor. MQTT integration disabled. Pass --mqtt* flags manually via commandline_options if using an external broker."
 fi
 
-if bashio::config.has_value "mqttport"; then
-    ebusd_args+=("--mqttport=$(bashio::config mqttport)")
-else
-    ebusd_args+=("--mqttport=$(bashio::services mqtt 'port')")
-fi
-
-if bashio::config.has_value "mqttuser"; then
-    ebusd_args+=("--mqttuser=$(bashio::config mqttuser)")
-else
-    ebusd_args+=("--mqttuser=$(bashio::services mqtt 'username')")
-fi
-
-if bashio::config.has_value "mqttpass"; then
-    ebusd_args+=("--mqttpass=$(bashio::config mqttpass)")
-else
-    ebusd_args+=("--mqttpass=$(bashio::services mqtt 'password')")
-fi
-
-#Boolean options
-declare options=( "readonly" "scanconfig" "mqttjson" "mqttlog" "mqttretain" "lograwdata")
-for optName in "${options[@]}"
-do
-    if bashio::config.true ${optName}; then
-        ebusd_args+=("--$optName")
+if bashio::config.has_value "network_device"; then
+    if bashio::config.has_value "device"; then
+        bashio::log.warning "Both 'device' and 'network_device' are set — using network_device."
     fi
-done
-
-#String options
-declare options=( "configpath" "port" "latency" "accesslevel" "pollinterval" "mqttint" "mqttvar" "mqtttopic" "lograwdatafile" "lograwdatasize")
-
-for optName in "${options[@]}"
-do
-    if bashio::config.has_value ${optName}; then
-        ebusd_args+=("--${optName}=$(bashio::config ${optName})")
-    fi
-done
-
-#Device and mode selection
-if bashio::config.has_value "device" && bashio::config.has_value "network_device" && bashio::config.has_value "mode"; then
-    bashio::log.warning "USB and network device defined.  Only one device can be used at a time."
-    bashio::log.warning "Ignoring USB device..."
-    ebusd_args+=("--device=$(bashio::config mode):$(bashio::config network_device)")
-elif bashio::config.has_value "device" && bashio::config.has_value "network_device"; then
-    bashio::log.warning "USB and network device defined.  Only one device can be used at a time."
-    bashio::log.warning "Ignoring USB device..."
-    ebusd_args+=("--device=$(bashio::config network_device)") 
-elif bashio::config.has_value "device" && bashio::config.has_value "mode"; then
-    ebusd_args+=("--device=$(bashio::config mode):$(bashio::config device)")
+    ebusd_args+=("--device=$(bashio::config 'network_device')")
 elif bashio::config.has_value "device"; then
-    ebusd_args+=("--device=$(bashio::config device)")
-elif bashio::config.has_value "network_device" && bashio::config.has_value "mode"; then
-    ebusd_args+=("--device=$(bashio::config mode):$(bashio::config network_device)")
-elif bashio::config.has_value "network_device"; then
-    ebusd_args+=("--device=$(bashio::config network_device)")
+    ebusd_args+=("--device=$(bashio::config 'device')")
 else
-    bashio::log.fatal "No network or USB device defined. Configure a device and restart addon"
-    #Stop addon, ebusd will not run without defining a device
-    bashio::addon.stop
+    bashio::log.info "No device configured — ebusd will attempt mDNS auto-discovery."
 fi
 
-#Logging
-declare options=( "loglevel_all" "loglevel_main" "loglevel_bus" "loglevel_update" "loglevel_network" "loglevel_other")
-for optName in "${options[@]}"
-do
-    if bashio::config.has_value ${optName}; then
-        ebusd_args+=("--log=$(echo $optName | sed 's/loglevel_//g'):$(bashio::config ${optName})")
+if [ ! -f /config/mqtt-hassio.cfg ]; then
+    bashio::log.info "Seeding default mqtt-hassio.cfg into addon config folder."
+    cp /etc/ebusd/mqtt-hassio.cfg /config/mqtt-hassio.cfg
+fi
+
+ttyd --port 7681 --writable bash >/dev/null 2>&1 &
+
+# ---------------------------------------------------------------------------
+# Deprecated config field detection — old (<=25.1) keys in options.json
+# ---------------------------------------------------------------------------
+_deprecated_keys=(mode scanconfig readonly http pollinterval latency configpath
+    accesslevel mqtttopic mqttint mqttvar mqttlog mqttretain mqtthost mqttport
+    mqttuser mqttpass lograwdata lograwdatafile lograwdatasize
+    loglevel_all loglevel_main loglevel_bus loglevel_update loglevel_network loglevel_other)
+_found=()
+for _k in "${_deprecated_keys[@]}"; do
+    if jq -e --arg k "$_k" 'has($k)' /data/options.json >/dev/null 2>&1; then
+        _found+=("$_k")
     fi
 done
-
-
-#Add additional options
-if bashio::config.has_value commandline_options; then
-    ebusd_args+=("$(bashio::config commandline_options)")
+if [ ${#_found[@]} -gt 0 ]; then
+    bashio::log.warning "================================================"
+    bashio::log.warning " DEPRECATED CONFIG FIELDS DETECTED: ${_found[*]}"
+    bashio::log.warning " These fields are from the old (<=25.1) schema"
+    bashio::log.warning " and are NO LONGER APPLIED by this addon version."
+    bashio::log.warning " Move them into the commandline_options list."
+    bashio::log.warning " See: https://github.com/LukasGrebe/ha-addons/blob/main/ebusd/DOCS.md"
+    bashio::log.warning "================================================"
 fi
 
-#Activate http
-if bashio::config.true http; then
-    ebusd_args+=" --httpport=8889"
-fi
+# ---------------------------------------------------------------------------
+# commandline_options — now a list; warn and fall back if old string format
+# ---------------------------------------------------------------------------
+_opts_type=$(jq -r '.commandline_options | type' /data/options.json 2>/dev/null)
 
-#Check for s6-log options
-if bashio::config.has_value logdir_name; then
-    if bashio::config.has_value logdir_files_number; then
-        logdir_files_number="n$(bashio::config logdir_files_number)"
-    else
-        logdir_files_number="n5"
-    fi
-
-    if bashio::config.has_value logdir_files_size; then
-        logdir_files_size=("s$(bashio::config logdir_files_size)")
-    else
-        logdir_files_size="s1000000"
-    fi
-
-    echo "> ebusd ${ebusd_args[*]} | s6-log 1 ${logdir_files_number} ${logdir_files_size} $(bashio::config logdir_name)"
-    ebusd ${ebusd_args[*]} | s6-log 1 ${logdir_files_number} ${logdir_files_size} $(bashio::config logdir_name)
+if [ "$_opts_type" = "string" ]; then
+    bashio::log.warning "commandline_options is a plain string — please convert it to a list (one flag per entry). Using it as-is for now."
+    _str_opts=$(jq -r '.commandline_options' /data/options.json)
+    bashio::log.info "ebusd $(printf '%s ' "${ebusd_args[@]}" ${_str_opts} | sed 's/--mqttuser=[^ ]*/--mqttuser=<redacted>/g; s/--mqttpass=[^ ]*/--mqttpass=<redacted>/g')"
+    exec ebusd "${ebusd_args[@]}" ${_str_opts}
+elif [ "$_opts_type" = "array" ]; then
+    while IFS= read -r _opt; do
+        [ -n "$_opt" ] && ebusd_args+=("$_opt")
+    done < <(jq -r '.commandline_options[]?' /data/options.json)
+    bashio::log.info "ebusd $(printf '%s ' "${ebusd_args[@]}" | sed 's/--mqttuser=[^ ]*/--mqttuser=<redacted>/g; s/--mqttpass=[^ ]*/--mqttpass=<redacted>/g')"
+    exec ebusd "${ebusd_args[@]}"
 else
-    echo "> ebusd ${ebusd_args[*]}"
-    ebusd ${ebusd_args[*]}
+    bashio::log.info "No commandline_options set — running with defaults only."
+    bashio::log.info "ebusd $(printf '%s ' "${ebusd_args[@]}" | sed 's/--mqttuser=[^ ]*/--mqttuser=<redacted>/g; s/--mqttpass=[^ ]*/--mqttpass=<redacted>/g')"
+    exec ebusd "${ebusd_args[@]}"
 fi
