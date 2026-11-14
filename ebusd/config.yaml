@@ -1,5 +1,5 @@
 name: eBUSdAlt
-version: "26.1.6"
+version: "26.1.10"
 slug: ebusd_alt
 description: >
   Same as original, but to have a second instance on my system
@@ -11,15 +11,18 @@ arch:
   - aarch64
   - amd64
 image: "ghcr.io/lukasgrebe/ha-addon-ebusd-{arch}"
+
 init: false
 startup: services
+# Source this is active
 #ingress: true
 #ingress_port: 7681
 services:
   - mqtt:want
 uart: true
 map:
-  - addon_config:rw
+  - app_config:rw
+  - share:rw
 ports:
   8888/tcp: null
   8889/tcp: null
@@ -27,9 +30,14 @@ ports_description:
   8888/tcp: eBUSd TCP command port
   8889/tcp: eBUSd HTTP port (set --httpport=8889 in commandline_options to enable)
 options:
+  seed_mqtt_cfg: true
   commandline_options:
     - "--mqttjson"
+  sqlite_retention_days: 10
 schema:
   device: "device(subsystem=tty)?"
   network_device: "str?"
+  seed_mqtt_cfg: bool
   commandline_options: ["str"]
+  sqlite_db: "str?"
+  sqlite_retention_days: "int(0,)"
