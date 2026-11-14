@@ -1,3 +1,43 @@
+# 26.1.10 (2026-10-22)
+
+## Bug Fixes
+* Use the map type `app_config` instead of the legacy `addon_config`, which Supervisor warns about (thanks @uwemarcus, fixes [#256](https://github.com/LukasGrebe/ha-addons/issues/256))
+* Several `--log` options for different targets (e.g. `--log=all:notice` and `--log=bus:debug`) no longer cause a duplicate flag warning (thanks @aavdberg, fixes [#258](https://github.com/LukasGrebe/ha-addons/issues/258))
+* SQLite telegram log: the database could not be created under `/share` (e.g. `/share/ebusd/telegrams.db` as in the docs), because the app mounted `/share` read-only. `/share` is now writable for the app, and a folder the log cannot write to is reported clearly instead of "unable to open database file".
+
+# 26.1.9 (2026-10-21)
+
+## Features
+* Add optional SQLite telegram log: set `sqlite_db` (e.g. `/share/ebusd/telegrams.db`) to store every telegram ebusd receives from the bus, including unknown, own and broken ones. Each telegram is split into the eBUS fields QQ ZZ PB SB NN DD CRC ACK / NN DD CRC ACK with a nanosecond timestamp, a status (`ok`, `crc`, `nak`, `timeout`, …) and the raw bytes, indexed for querying by address, command and time. Telegrams older than `sqlite_retention_days` (default 10) are deleted. See the [docs](https://github.com/LukasGrebe/ha-addons/blob/main/ebusd/DOCS.md#sqlite-telegram-log)
+* The image now contains `python3` (for the telegram log) and the `sqlite3` command line tool, usable from the built-in terminal
+
+## App Changes
+* Test upcoming versions: install **eBUSd (next)** from `https://github.com/LukasGrebe/ha-addons#channel-next`, and every pull request gets an installable test app (see [Testing upcoming versions](https://github.com/LukasGrebe/ha-addons/blob/main/ebusd/DOCS.md#testing-upcoming-versions))
+* Every change is tested before release against simulated USB and network eBUS adapters (plain and enhanced protocol) and an MQTT broker
+* Images are built with Home Assistant's new build actions, aarch64 natively instead of emulated; the base image is now set in the Dockerfile (`build.yaml` removed) and ttyd (web terminal) is pinned to 1.7.8
+* A published version is never rebuilt anymore: until now, every change merged into main replaced the images of the current version
+
+# 26.1.8 (2026-04-11)
+
+## Bug Fixes
+* Fix crash at startup when `--configpath` or `--configlang` are absent from `commandline_options` — `grep` returned exit code 1 (no match), which with `set -o pipefail` and `set -o errexit` (both set by bashio) caused the script to exit silently after printing the version line. This broke every user who did not have these flags set, which is most users.
+
+# 26.1.7 (2026-04-03)
+
+## Features
+* Mount `/share` — the HA shared folder (`/share` on the host) is now accessible inside the container, allowing ebusd CSV files or other assets stored there to be referenced directly via `--configpath=/share/...` (thanks @muewe, [#226](https://github.com/LukasGrebe/ha-addons/pull/226))
+
+## App Changes
+* Add `seed_mqtt_cfg` option (default: `true`) — replaces the previous behaviour of unconditionally injecting `--mqttjson` and `--mqttint=/config/mqtt-hassio.cfg` whenever the Mosquitto broker was detected. The addon now seeds `mqtt-hassio.cfg` into the config folder on first start and adds both flags only when this option is enabled, giving power users a clean opt-out (fixes [#219](https://github.com/LukasGrebe/ha-addons/issues/219))
+* `--mqttjson` is no longer force-added by the addon — it lives in `commandline_options` as a removable default. Users managing their own MQTT entities via CSV/YAML can remove it freely
+* Skip Supervisor MQTT credential auto-fill when `--mqtthost` is already present in `commandline_options` — use an external broker without credential conflicts
+* Warn at startup when `--configpath` points to a local directory containing no CSV files at the locations ebusd expects; suggests the correct path including parent directories and CDN language subdirectories (`en/`, `de/`, etc.) — addresses the common mistake of pointing at a repo root instead of the language subfolder
+* Warn when `--configpath` language folder and `--configlang` do not match when using a local CDN clone
+* Warn when a `commandline_options` entry contains multiple flags in one line, or when the same flag appears more than once
+* Add German translation (`de.yaml`)
+* Update all translations (cz, it, pl) with `seed_mqtt_cfg` and revised `commandline_options` descriptions
+* Expand DOCS.md: dedicated MQTT section, `seed_mqtt_cfg` usage, external broker setup, `--configpath`/`--configlang` guidance, startup log reference table
+
 # 26.1.6 (2026-03-17)
 > ### ⚠️ Breaking in app configuration: use `commandline_options` for ebusd run flags instead of individual options
 >
